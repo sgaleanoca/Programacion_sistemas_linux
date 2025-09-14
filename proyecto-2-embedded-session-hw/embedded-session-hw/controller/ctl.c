@@ -18,12 +18,18 @@ static double now(void) {
     return ts.tv_sec + ts.tv_nsec / 1e9;
 }
 
-int main(void) {
+int main(int argc, char *argv[]) {
     /* Umbral fijo para este ejemplo */
     const double THRESHOLD = 50.0;
 
-    /* Inicializar sensor */
-    sensor_init();
+    /* Inicializar sensor según argumentos */
+    if (argc > 1) {
+        /* Usar archivo CSV si se proporciona */
+        sensor_init_csv(argv[1]);
+    } else {
+        /* Usar modo aleatorio por defecto */
+        sensor_init();
+    }
 
     /* Crear actuadores */
     Actuator led = create_led_actuator();
@@ -34,6 +40,8 @@ int main(void) {
     double buzzer_off_time = 0.0;
 
     printf("=== CONTROLADOR INICIADO ===\n");
+    printf("Modo del sensor: %s\n", 
+           sensor_get_mode() == SENSOR_MODE_RANDOM ? "ALEATORIO" : "CSV");
 
     /* Bucle infinito de muestreo cada 100 ms */
     while (1) {
