@@ -3,8 +3,6 @@
 
 #include <stdio.h>
 
-FILE* open_log_file();
-void log_value(FILE *f, int value);
-void close_log_file(FILE *f);
+void log_sample(FILE *logfile, const char *timestamp, int value);
 
 #endif

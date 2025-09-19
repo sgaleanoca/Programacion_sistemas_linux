@@ -1,6 +1,6 @@
 #ifndef SENSOR_MOCK_H
 #define SENSOR_MOCK_H
 
-int read_mock_sensor(); // Devuelve un valor simulado
+int mock_sensor(int counter, const char *device_path);
 
 #endif

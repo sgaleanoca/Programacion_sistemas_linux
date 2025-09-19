@@ -1,31 +1,38 @@
-CC = gcc
-CFLAGS = -Wall -O2
-SRC = src/main.c src/logger.c src/sensor_mock.c
-OBJ = $(SRC:.c=.o)
-BIN = mock-sensor
+CC=gcc
+CFLAGS=-Wall -Wextra -O2
 
-PREFIX ?= /usr/local
-BINDIR = $(PREFIX)/bin
-UNITDIR = /etc/systemd/system
+SRC=src/main.c src/logger.c src/sensor_mock.c
+OBJ=$(SRC:.c=.o)
+BIN=assignment-sensor
+
+TESTS=tests/logger_test tests/sensor_mock_test
 
 all: $(BIN)
 
 $(BIN): $(OBJ)
-	$(CC) $(CFLAGS) -o $@ $(OBJ)
+	$(CC) $(CFLAGS) -o $@ $^
 
-%.o: %.c
-	$(CC) $(CFLAGS) -c $< -o $@
+tests/logger_test: src/logger.c src/logger.h tests/logger_test.c
+	$(CC) $(CFLAGS) -o $@ $^
 
-clean:
-	rm -f $(OBJ) $(BIN)
+tests/sensor_mock_test: src/sensor_mock.c src/sensor_mock.h tests/sensor_mock_test.c
+	$(CC) $(CFLAGS) -o $@ $^
+
+test: $(TESTS)
+	./tests/logger_test
+	./tests/sensor_mock_test
 
 install: $(BIN)
-	mkdir -p $(BINDIR)
-	install -m 755 $(BIN) $(BINDIR)/
-	install -m 644 systemd/assignment-sensor.service $(UNITDIR)/
+	sudo cp $(BIN) /usr/local/bin/sensor_logger
+	sudo cp systemd/assignment-sensor.service /etc/systemd/system/
+	sudo systemctl daemon-reload
 
 uninstall:
-	rm -f $(BINDIR)/$(BIN)
-	rm -f $(UNITDIR)/assignment-sensor.service
+	sudo systemctl stop assignment-sensor || true
+	sudo systemctl disable assignment-sensor || true
+	sudo rm -f /usr/local/bin/sensor_logger
+	sudo rm -f /etc/systemd/system/assignment-sensor.service
+	sudo systemctl daemon-reload
 
-.PHONY: all clean install uninstall
+clean:
+	rm -f $(BIN) src/*.o tests/*_test
