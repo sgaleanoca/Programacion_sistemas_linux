@@ -1,14 +1,12 @@
 [Unit]
-Description=Mock Sensor Logger Service
-After=network.target
+Description=Servicio de log para un sensor simulado
+After=multi-user.target
 
 [Service]
-ExecStart=/usr/local/bin/sensor_logger --interval 5
+# Ruta absoluta al ejecutable. Asumimos que lo instalaremos ahí.
+ExecStart=/usr/local/bin/assignment-sensor --interval 5
 Restart=on-failure
-RestartSec=2
-StandardOutput=journal
-StandardError=journal
-KillSignal=SIGTERM
+RestartSec=5s
 
 [Install]
 WantedBy=multi-user.target
