@@ -61,11 +61,6 @@ monitor_logs_realtime() {
     timeout "${duration}s" tail -f "$log_file" 2>/dev/null || {
         echo ""
         echo "Monitoreo completado (${duration} segundos)"
-        echo ""
-        echo "--- Contenido completo del archivo de log ---"
-        cat "$log_file"
-        echo ""
-        echo "--- Fin del contenido del log ---"
     }
 }
 
