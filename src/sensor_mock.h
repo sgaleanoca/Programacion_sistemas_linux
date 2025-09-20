@@ -1,6 +1,7 @@
 #ifndef SENSOR_MOCK_H
 #define SENSOR_MOCK_H
 
-int mock_sensor(int counter, const char *device_path);
+// Proporciona un valor simulado de temperatura entre 20.0 y 30.0
+float get_sensor_value();
 
-#endif
+#endif // SENSOR_MOCK_H

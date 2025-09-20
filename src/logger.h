@@ -3,6 +3,13 @@
 
 #include <stdio.h>
 
-void log_sample(FILE *logfile, const char *timestamp, int value);
+// Abre el archivo de log. Devuelve 0 si tiene éxito, -1 si falla.
+int init_logger();
 
-#endif
+// Escribe un registro en el log
+void log_data(float value);
+
+// Cierra el archivo de log
+void close_logger();
+
+#endif // LOGGER_H
