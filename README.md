@@ -1,4 +1,4 @@
-## Pasos de Instalación y Gestión:
+## Iniciarlo manualmente:
 
 **1. Compila el proyecto:**
 
@@ -43,4 +43,17 @@ Al hacer esto, systemd enviará la señal SIGTERM a tu programa, que la capturar
 **9. Para deshabilitar el servicio (para que no inicie con el sistema):**
 
     sudo systemctl disable assignment-sensor.service
+
+
+## Ejecutar los tests:
+
+**Para test.sh:**
+
+    sudo ./tests/test.sh
+
+**Para demo_realtime.sh:**
+
+    sudo systemctl start assignment-sensor.service
+
+    sudo ./tests/demo_realtime.sh
 
