@@ -1,0 +1,30 @@
+# Archivos objeto compilados
+*.o
+
+# Ejecutable principal
+system_info
+
+# Archivos temporales
+*~
+*.tmp
+*.swp
+*.swo
+
+# Archivos de respaldo
+*.bak
+*.backup
+
+# Archivos de depuración
+*.dSYM/
+*.su
+*.idb
+*.pdb
+
+# Archivos de configuración del IDE
+.vscode/
+.idea/
+*.code-workspace
+
+# Archivos del sistema
+.DS_Store
+Thumbs.db
