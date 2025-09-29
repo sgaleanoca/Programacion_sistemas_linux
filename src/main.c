@@ -46,7 +46,7 @@ int main(int argc, char *argv[]) {
     }
 
     printf("\nSeñal recibida. Cerrando de forma ordenada...\n");
-    close_logger();
+    close_logger()
 
     return 0;
 }
