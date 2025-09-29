@@ -1,0 +1,17 @@
+{
+  "ai_tools": [
+    {
+      "name": "ChatGPT",
+      "model": "GPT-5 Thinking mini",
+      "provider": "OpenAI",
+      "date_range": "2024-12-19 to 2025-09-19",
+      "usage": [
+        "Review and refinement of code snippets",
+        "Suggestions for sequencing and test supervision",
+        "Guidance on systemd configuration and service formatting",
+        "Advice on the structure and writing of the README and artifacts in ai/"
+      ]
+    }
+  ],
+  "notes": "The developer implemented and verified the code. AI assistance was limited to targeted guidance, review, and suggestions; all design and implementation decisions were made and validated by the developer."
+}
