@@ -1,0 +1,128 @@
+Paso a paso para instalar pico 8:
+
+Entrar por SSH a la RPi
+
+
+1. Configurar lo básico
+
+sudo apt update && sudo apt upgrade -y
+sudo apt install git unzip xinit xserver-xorg -y
+sudo apt install --no-install-recommends xserver-xorg xinit x11-xserver-utils -y
+
+
+2. Crear usuario automático para la consola
+
+sudo raspi-config
+
+Luego:
+
+System Options → Boot / Auto Login → selecciona Console Autologin.
+
+Salvar y reiniciar.
+
+
+3. Crear las carpetas
+
+mkdir /home/pi
+
+
+4. En la PC, hay que pasar el zip del pico-8 donde esté localizado con
+
+scp pico-8_0.2.7_raspi.zip arcandor@192.168.172.51:/home/pi/
+
+
+5. En la RPi
+
+cd /home/pi
+unzip pico-8_0.2.7_raspi.zip
+
+
+6. Configurar el inicio
+
+ls /home/pi/pico-8
+nano ~/start_pico8.sh
+
+"
+#!/bin/bash
+xset -dpms
+xset s off
+xset s noblank
+unclutter -idle 0 &
+cd /home/pi/pico-8
+./pico8_dyn -splore -fullscreen 1
+"
+
+Darle ctrl + o, luego enter, por último ctrl + x
+
+
+7. Darle permisos
+
+chmod +x ~/start_pico8.sh
+
+
+8. Hacer el arranque automático
+
+nano ~/.bash_profile
+
+Agregar al final
+
+"
+if [ -z "$DISPLAY" ] && [ "$(tty)" = "/dev/tty1" ]; then
+  startx /home/pi/start_pico8.sh -- -nocursor
+fi
+"
+
+
+9. Instalar unclutter
+
+sudo apt install unclutter -y
+
+
+10. reiniciar
+
+sudo reboot
+
+
+11. Saldrá un error, pero lo demás ya esta implementado.
+
+./pico8_dyn: cannot execute: required file not found
+
+
+RPi Zero 2W es ARMv8 (64 bits),
+pero si bajamos la versión ARMv7, no corre en un sistema 64-bit “puro” (da justo ese error: cannot execute: required file not found).
+
+Verificar dentro del ZIP que te pasó tu hermano:
+
+Si el nombre del ZIP es algo como pico-8_0.2.7_arm64.zip → perfecto
+
+Si es pico-8_0.2.7_raspi.zip → esa es 32 bits (ARMv7)
+
+Y como estamos en Raspberry Pi OS Lite 64-bit, el sistema no puede ejecutar binarios ARMv7 sin las librerías de compatibilidad.
+
+
+12. Solución de librerias y mantener 64-bit para agregar compatibilidad ARMv7
+
+sudo dpkg --add-architecture armhf
+sudo apt update
+sudo apt install libc6:armhf libstdc++6:armhf
+
+
+Volver a probar
+
+cd ~/pico-8
+./pico8_dyn
+
+
+13. El binario sí corre, pero ahora le faltan las librerías ARM de SDL2 (la base gráfica)
+
+sudo apt update
+sudo apt install libsdl2-2.0-0:armhf
+
+sudo apt install libpng16-16:armhf libtinfo6:armhf libstdc++6:armhf
+
+
+Volver a probar
+
+cd ~/pico-8
+./pico8_dyn
+
