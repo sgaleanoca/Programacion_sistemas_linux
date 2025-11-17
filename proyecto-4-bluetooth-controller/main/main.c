@@ -20,10 +20,10 @@ static const char *TAG = "CONTROLLER";
 
 // Definición de pines GPIO para los botones
 // NOTA: Cambia estos valores según tu conexión física
-#define GPIO_BUTTON_A       GPIO_NUM_0
-#define GPIO_BUTTON_B      GPIO_NUM_2
-#define GPIO_BUTTON_SELECT  GPIO_NUM_4
-#define GPIO_BUTTON_START   GPIO_NUM_5
+#define GPIO_BUTTON_A       GPIO_NUM_13
+#define GPIO_BUTTON_B      GPIO_NUM_12
+#define GPIO_BUTTON_SELECT  GPIO_NUM_25
+#define GPIO_BUTTON_START   GPIO_NUM_26
 
 // Definición de GPIO para el joystick (ADC)
 // NOTA: Cambia estos valores según tu conexión física
