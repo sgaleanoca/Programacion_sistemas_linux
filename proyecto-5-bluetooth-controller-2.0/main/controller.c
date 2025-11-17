@@ -227,64 +227,38 @@ static void button_task(void *pvParameters)
         bool select_pressed = read_button(GPIO_BUTTON_SELECT);
         bool start_pressed = read_button(GPIO_BUTTON_START);
 
-        // Mapeo de botones a teclas HID
-        // Botón A -> Tecla 'A' (HID_KEY_A = 4)
-        // Botón B -> Tecla 'B' (HID_KEY_B = 5)
-        // Botón SELECT -> Tecla Escape (HID_KEY_ESCAPE = 41)
-        // Botón START -> Tecla Enter (HID_KEY_RETURN = 40)
+        // Mapeo de botones del controlador a botones del mouse HID (para gamepad)
+        // Botón A -> Botón izquierdo del mouse (bit 0 = 0x01)
+        // Botón B -> Botón derecho del mouse (bit 1 = 0x02)
+        // Botón SELECT -> Botón medio del mouse (bit 2 = 0x04)
+        // Botón START -> Tecla Enter (para compatibilidad con emuladores)
+        
+        // Calcular el estado combinado de los botones del mouse
+        uint8_t mouse_buttons = 0;
+        if (a_pressed) mouse_buttons |= 0x01;      // Botón izquierdo
+        if (b_pressed) mouse_buttons |= 0x02;      // Botón derecho
+        if (select_pressed) mouse_buttons |= 0x04; // Botón medio
 
-        // Solo procesar si hay un cambio de estado
-        if (a_pressed != button_a_state) {
+        // Solo procesar si hay un cambio de estado en los botones del mouse
+        uint8_t prev_mouse_buttons = 0;
+        if (button_a_state) prev_mouse_buttons |= 0x01;
+        if (button_b_state) prev_mouse_buttons |= 0x02;
+        if (button_select_state) prev_mouse_buttons |= 0x04;
+        
+        if (mouse_buttons != prev_mouse_buttons) {
             button_a_state = a_pressed;
-            if (a_pressed) {
-                ESP_LOGI(TAG, "Botón A: PRESIONADO");
-                if (current_connected) {
-                    uint8_t key = HID_KEY_A;
-                    esp_hidd_send_keyboard_value(current_conn_id, 0, &key, 1);
-                }
-            } else {
-                ESP_LOGI(TAG, "Botón A: SUELTO");
-                if (current_connected) {
-                    uint8_t key = 0; // Enviar tecla vacía para soltar
-                    esp_hidd_send_keyboard_value(current_conn_id, 0, &key, 1);
-                }
-            }
-        }
-        
-        if (b_pressed != button_b_state) {
             button_b_state = b_pressed;
-            if (b_pressed) {
-                ESP_LOGI(TAG, "Botón B: PRESIONADO");
-                if (current_connected) {
-                    uint8_t key = HID_KEY_B;
-                    esp_hidd_send_keyboard_value(current_conn_id, 0, &key, 1);
-                }
-            } else {
-                ESP_LOGI(TAG, "Botón B: SUELTO");
-                if (current_connected) {
-                    uint8_t key = 0;
-                    esp_hidd_send_keyboard_value(current_conn_id, 0, &key, 1);
-                }
-            }
-        }
-        
-        if (select_pressed != button_select_state) {
             button_select_state = select_pressed;
-            if (select_pressed) {
-                ESP_LOGI(TAG, "Botón SELECT: PRESIONADO");
-                if (current_connected) {
-                    uint8_t key = HID_KEY_ESCAPE;
-                    esp_hidd_send_keyboard_value(current_conn_id, 0, &key, 1);
-                }
-            } else {
-                ESP_LOGI(TAG, "Botón SELECT: SUELTO");
-                if (current_connected) {
-                    uint8_t key = 0;
-                    esp_hidd_send_keyboard_value(current_conn_id, 0, &key, 1);
-                }
+            
+            if (current_connected) {
+                // Enviar estado de botones del mouse (sin movimiento)
+                esp_hidd_send_mouse_value(current_conn_id, mouse_buttons, 0, 0);
+                ESP_LOGI(TAG, "Botones mouse: A=%d B=%d SELECT=%d (mask=0x%02X)", 
+                         a_pressed, b_pressed, select_pressed, mouse_buttons);
             }
         }
         
+        // START se envía como teclado (Enter) para compatibilidad
         if (start_pressed != button_start_state) {
             button_start_state = start_pressed;
             if (start_pressed) {
@@ -387,26 +361,59 @@ static void joystick_task(void *pvParameters)
         float x = normalize_joystick(vrx_mv, calibrated_center_vrx, min_mv, max_mv);
         float y = normalize_joystick(vry_mv, calibrated_center_vry, min_mv, max_mv);
 
-        // Solo procesar si hay un cambio significativo
-        if (fabsf(x - last_x) > threshold || fabsf(y - last_y) > threshold) {
-            ESP_LOGI(TAG, "Joystick - x: %.3f, y: %.3f", x, y);
+        // Convertir joystick a D-Pad (direcciones discretas)
+        // Umbral para considerar que el joystick está en una dirección
+        const float dpad_threshold = 0.3f; // 30% del rango
+        // Sensibilidad del D-Pad (valores más pequeños para movimiento más controlado)
+        const int8_t dpad_sensitivity = 20; // Ajustar según necesidad
+        
+        int8_t dpad_x = 0;
+        int8_t dpad_y = 0;
+        
+        // Determinar dirección D-Pad basada en el joystick
+        if (x < -dpad_threshold) {
+            dpad_x = -dpad_sensitivity; // LEFT
+        } else if (x > dpad_threshold) {
+            dpad_x = dpad_sensitivity;  // RIGHT
+        }
+        
+        if (y < -dpad_threshold) {
+            dpad_y = -dpad_sensitivity; // UP (Y invertido)
+        } else if (y > dpad_threshold) {
+            dpad_y = dpad_sensitivity;  // DOWN (Y invertido)
+        }
+        
+        // Calcular dirección anterior para detectar cambios
+        int8_t last_dpad_x = 0;
+        int8_t last_dpad_y = 0;
+        if (last_x < -dpad_threshold) last_dpad_x = -dpad_sensitivity;
+        else if (last_x > dpad_threshold) last_dpad_x = dpad_sensitivity;
+        if (last_y < -dpad_threshold) last_dpad_y = -dpad_sensitivity;
+        else if (last_y > dpad_threshold) last_dpad_y = dpad_sensitivity;
+        
+        // Solo procesar si hay un cambio de dirección o si el joystick está activo
+        if (dpad_x != last_dpad_x || dpad_y != last_dpad_y || 
+            (dpad_x != 0 || dpad_y != 0)) {
             
-            // Enviar movimiento del mouse si hay conexión
+            ESP_LOGI(TAG, "Joystick - x: %.3f, y: %.3f -> D-Pad: X=%d, Y=%d", 
+                     x, y, dpad_x, dpad_y);
+            
+            // Enviar movimiento del mouse como D-Pad si hay conexión
             if (current_connected) {
-                // Convertir coordenadas normalizadas (-1.0 a 1.0) a mickeys (-127 a 127)
-                // Usar un factor de escala para controlar la sensibilidad
-                const float sensitivity = 50.0f; // Ajustar según necesidad
-                int8_t mouse_x = (int8_t)(x * sensitivity);
-                int8_t mouse_y = (int8_t)(-y * sensitivity); // Invertir Y para que sea intuitivo
+                // Obtener estado actual de los botones del mouse
+                uint8_t current_mouse_buttons = 0;
+                if (button_a_state) current_mouse_buttons |= 0x01;
+                if (button_b_state) current_mouse_buttons |= 0x02;
+                if (button_select_state) current_mouse_buttons |= 0x04;
                 
-                // Limitar a rango válido
-                if (mouse_x > 127) mouse_x = 127;
-                if (mouse_x < -127) mouse_x = -127;
-                if (mouse_y > 127) mouse_y = 127;
-                if (mouse_y < -127) mouse_y = -127;
-                
-                // Enviar movimiento del mouse (sin botones presionados)
-                esp_hidd_send_mouse_value(current_conn_id, 0, mouse_x, mouse_y);
+                // Enviar movimiento del mouse (D-Pad) manteniendo los botones
+                // Solo enviar si hay una dirección activa
+                if (dpad_x != 0 || dpad_y != 0) {
+                    esp_hidd_send_mouse_value(current_conn_id, current_mouse_buttons, dpad_x, dpad_y);
+                } else {
+                    // Si el joystick está en el centro, enviar sin movimiento pero con botones
+                    esp_hidd_send_mouse_value(current_conn_id, current_mouse_buttons, 0, 0);
+                }
             }
             
             last_x = x;
