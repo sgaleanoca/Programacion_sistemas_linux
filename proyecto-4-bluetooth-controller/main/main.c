@@ -6,6 +6,7 @@
 
 #include <stdio.h>
 #include <stdlib.h>
+#include <math.h>
 #include <inttypes.h>
 #include "sdkconfig.h"
 #include "freertos/FreeRTOS.h"
@@ -233,29 +234,84 @@ static void button_task(void *pvParameters)
 }
 
 /**
+ * @brief Convierte un valor de milivoltios a coordenada normalizada (-1.0 a 1.0)
+ * @param mv Valor en milivoltios
+ * @param center_mv Valor en mV cuando el joystick está en el centro
+ * @param min_mv Valor mínimo en mV
+ * @param max_mv Valor máximo en mV
+ * @return Coordenada normalizada de -1.0 a 1.0
+ */
+static float normalize_joystick(int mv, int center_mv, int min_mv, int max_mv)
+{
+    // Limitar el valor al rango
+    if (mv < min_mv) mv = min_mv;
+    if (mv > max_mv) mv = max_mv;
+    
+    // Calcular la desviación desde el centro
+    float deviation = (float)(mv - center_mv);
+    
+    // Normalizar al rango -1.0 a 1.0
+    // Usar el rango más grande (arriba o abajo del centro) para normalizar
+    float range_up = (float)(max_mv - center_mv);
+    float range_down = (float)(center_mv - min_mv);
+    float max_range = (range_up > range_down) ? range_up : range_down;
+    
+    if (max_range > 0) {
+        return deviation / max_range;
+    }
+    return 0.0f;
+}
+
+/**
  * @brief Tarea para leer y mostrar los valores del joystick
  */
 static void joystick_task(void *pvParameters)
 {
-    int last_vrx = -1;
-    int last_vry = -1;
-    const int threshold = 50; // Umbral de cambio para evitar spam (50mV)
+    float last_x = 999.0f;  // Valor inicial imposible
+    float last_y = 999.0f;
+    const float threshold = 0.05f; // Umbral de cambio (5% del rango)
     
     adc_channel_t channel_vrx = ADC_CHANNEL_0;  // GPIO 36
     adc_channel_t channel_vry = ADC_CHANNEL_3;  // GPIO 39
+
+    // Parámetros de calibración del joystick
+    // Estos valores pueden ajustarse según tu joystick específico
+    // Para un joystick típico con alimentación de 3.3V:
+    const int min_mv = 0;        // Mínimo teórico
+    const int max_mv = 3300;     // Máximo teórico (3.3V)
+    const int center_mv = 1650;  // Centro teórico (1.65V)
+    
+    // Leer valores iniciales para calibrar el centro real
+    int initial_vrx = 0;
+    int initial_vry = 0;
+    const int calibration_samples = 10;
+    for (int i = 0; i < calibration_samples; i++) {
+        initial_vrx += read_adc_mv(channel_vrx, adc1_cali_handle_vrx);
+        initial_vry += read_adc_mv(channel_vry, adc1_cali_handle_vry);
+        vTaskDelay(pdMS_TO_TICKS(10));
+    }
+    int calibrated_center_vrx = initial_vrx / calibration_samples;
+    int calibrated_center_vry = initial_vry / calibration_samples;
+    
+    ESP_LOGI(TAG, "Joystick calibrado - Centro VRX: %d mV, Centro VRY: %d mV", 
+             calibrated_center_vrx, calibrated_center_vry);
 
     while (1) {
         int vrx_mv = read_adc_mv(channel_vrx, adc1_cali_handle_vrx);
         int vry_mv = read_adc_mv(channel_vry, adc1_cali_handle_vry);
 
+        // Convertir a coordenadas normalizadas
+        float x = normalize_joystick(vrx_mv, calibrated_center_vrx, min_mv, max_mv);
+        float y = normalize_joystick(vry_mv, calibrated_center_vry, min_mv, max_mv);
+
         // Solo imprimir si hay un cambio significativo
-        if (abs(vrx_mv - last_vrx) > threshold || abs(vry_mv - last_vry) > threshold) {
-            printf("Joystick - VRX: %d mV, VRY: %d mV\n", vrx_mv, vry_mv);
-            last_vrx = vrx_mv;
-            last_vry = vry_mv;
+        if (fabsf(x - last_x) > threshold || fabsf(y - last_y) > threshold) {
+            printf("Joystick - x: %.3f, y: %.3f\n", x, y);
+            last_x = x;
+            last_y = y;
         }
 
-        vTaskDelay(pdMS_TO_TICKS(100)); // Leer cada 100ms
+        vTaskDelay(pdMS_TO_TICKS(50)); // Leer cada 50ms para mejor respuesta
     }
 }
 
