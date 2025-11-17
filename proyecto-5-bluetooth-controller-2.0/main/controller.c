@@ -18,6 +18,9 @@
 #include "esp_adc/adc_cali.h"
 #include "esp_adc/adc_cali_scheme.h"
 #include "controller.h"
+#include "esp_hidd_prf_api.h"
+#include "hid_dev.h"
+#include "freertos/semphr.h"
 
 static const char *TAG = "CONTROLLER";
 
@@ -34,6 +37,11 @@ static bool button_a_state = false;
 static bool button_b_state = false;
 static bool button_select_state = false;
 static bool button_start_state = false;
+
+// Estado de conexión HID
+static uint16_t hid_conn_id = 0;
+static bool hid_connected = false;
+static SemaphoreHandle_t hid_conn_mutex = NULL;
 
 /**
  * @brief Calibración del ADC
@@ -203,43 +211,94 @@ static int read_adc_mv(adc_channel_t channel, adc_cali_handle_t cali_handle)
  */
 static void button_task(void *pvParameters)
 {
+    uint16_t current_conn_id = 0;
+    bool current_connected = false;
+    
     while (1) {
+        // Obtener estado de conexión de forma thread-safe
+        if (xSemaphoreTake(hid_conn_mutex, pdMS_TO_TICKS(10)) == pdTRUE) {
+            current_conn_id = hid_conn_id;
+            current_connected = hid_connected;
+            xSemaphoreGive(hid_conn_mutex);
+        }
+        
         bool a_pressed = read_button(GPIO_BUTTON_A);
         bool b_pressed = read_button(GPIO_BUTTON_B);
         bool select_pressed = read_button(GPIO_BUTTON_SELECT);
         bool start_pressed = read_button(GPIO_BUTTON_START);
 
-        // Solo imprimir si hay un cambio de estado
+        // Mapeo de botones a teclas HID
+        // Botón A -> Tecla 'A' (HID_KEY_A = 4)
+        // Botón B -> Tecla 'B' (HID_KEY_B = 5)
+        // Botón SELECT -> Tecla Escape (HID_KEY_ESCAPE = 41)
+        // Botón START -> Tecla Enter (HID_KEY_RETURN = 40)
+
+        // Solo procesar si hay un cambio de estado
         if (a_pressed != button_a_state) {
             button_a_state = a_pressed;
             if (a_pressed) {
                 ESP_LOGI(TAG, "Botón A: PRESIONADO");
+                if (current_connected) {
+                    uint8_t key = HID_KEY_A;
+                    esp_hidd_send_keyboard_value(current_conn_id, 0, &key, 1);
+                }
             } else {
                 ESP_LOGI(TAG, "Botón A: SUELTO");
+                if (current_connected) {
+                    uint8_t key = 0; // Enviar tecla vacía para soltar
+                    esp_hidd_send_keyboard_value(current_conn_id, 0, &key, 1);
+                }
             }
         }
+        
         if (b_pressed != button_b_state) {
             button_b_state = b_pressed;
             if (b_pressed) {
                 ESP_LOGI(TAG, "Botón B: PRESIONADO");
+                if (current_connected) {
+                    uint8_t key = HID_KEY_B;
+                    esp_hidd_send_keyboard_value(current_conn_id, 0, &key, 1);
+                }
             } else {
                 ESP_LOGI(TAG, "Botón B: SUELTO");
+                if (current_connected) {
+                    uint8_t key = 0;
+                    esp_hidd_send_keyboard_value(current_conn_id, 0, &key, 1);
+                }
             }
         }
+        
         if (select_pressed != button_select_state) {
             button_select_state = select_pressed;
             if (select_pressed) {
                 ESP_LOGI(TAG, "Botón SELECT: PRESIONADO");
+                if (current_connected) {
+                    uint8_t key = HID_KEY_ESCAPE;
+                    esp_hidd_send_keyboard_value(current_conn_id, 0, &key, 1);
+                }
             } else {
                 ESP_LOGI(TAG, "Botón SELECT: SUELTO");
+                if (current_connected) {
+                    uint8_t key = 0;
+                    esp_hidd_send_keyboard_value(current_conn_id, 0, &key, 1);
+                }
             }
         }
+        
         if (start_pressed != button_start_state) {
             button_start_state = start_pressed;
             if (start_pressed) {
                 ESP_LOGI(TAG, "Botón START: PRESIONADO");
+                if (current_connected) {
+                    uint8_t key = HID_KEY_RETURN;
+                    esp_hidd_send_keyboard_value(current_conn_id, 0, &key, 1);
+                }
             } else {
                 ESP_LOGI(TAG, "Botón START: SUELTO");
+                if (current_connected) {
+                    uint8_t key = 0;
+                    esp_hidd_send_keyboard_value(current_conn_id, 0, &key, 1);
+                }
             }
         }
 
@@ -310,7 +369,17 @@ static void joystick_task(void *pvParameters)
     ESP_LOGI(TAG, "Joystick calibrado - Centro VRX: %d mV, Centro VRY: %d mV", 
              calibrated_center_vrx, calibrated_center_vry);
 
+    uint16_t current_conn_id = 0;
+    bool current_connected = false;
+
     while (1) {
+        // Obtener estado de conexión de forma thread-safe
+        if (xSemaphoreTake(hid_conn_mutex, pdMS_TO_TICKS(10)) == pdTRUE) {
+            current_conn_id = hid_conn_id;
+            current_connected = hid_connected;
+            xSemaphoreGive(hid_conn_mutex);
+        }
+        
         int vrx_mv = read_adc_mv(channel_vrx, adc1_cali_handle_vrx);
         int vry_mv = read_adc_mv(channel_vry, adc1_cali_handle_vry);
 
@@ -318,9 +387,28 @@ static void joystick_task(void *pvParameters)
         float x = normalize_joystick(vrx_mv, calibrated_center_vrx, min_mv, max_mv);
         float y = normalize_joystick(vry_mv, calibrated_center_vry, min_mv, max_mv);
 
-        // Solo imprimir si hay un cambio significativo
+        // Solo procesar si hay un cambio significativo
         if (fabsf(x - last_x) > threshold || fabsf(y - last_y) > threshold) {
             ESP_LOGI(TAG, "Joystick - x: %.3f, y: %.3f", x, y);
+            
+            // Enviar movimiento del mouse si hay conexión
+            if (current_connected) {
+                // Convertir coordenadas normalizadas (-1.0 a 1.0) a mickeys (-127 a 127)
+                // Usar un factor de escala para controlar la sensibilidad
+                const float sensitivity = 50.0f; // Ajustar según necesidad
+                int8_t mouse_x = (int8_t)(x * sensitivity);
+                int8_t mouse_y = (int8_t)(-y * sensitivity); // Invertir Y para que sea intuitivo
+                
+                // Limitar a rango válido
+                if (mouse_x > 127) mouse_x = 127;
+                if (mouse_x < -127) mouse_x = -127;
+                if (mouse_y > 127) mouse_y = 127;
+                if (mouse_y < -127) mouse_y = -127;
+                
+                // Enviar movimiento del mouse (sin botones presionados)
+                esp_hidd_send_mouse_value(current_conn_id, 0, mouse_x, mouse_y);
+            }
+            
             last_x = x;
             last_y = y;
         }
@@ -334,6 +422,13 @@ esp_err_t controller_init(void)
     esp_err_t ret = ESP_OK;
 
     ESP_LOGI(TAG, "Inicializando controlador de botones y joystick...");
+
+    // Crear mutex para acceso thread-safe a la conexión HID
+    hid_conn_mutex = xSemaphoreCreateMutex();
+    if (hid_conn_mutex == NULL) {
+        ESP_LOGE(TAG, "Failed to create HID connection mutex");
+        return ESP_ERR_NO_MEM;
+    }
 
     // Inicializar botones
     ret = buttons_init();
@@ -370,5 +465,29 @@ esp_err_t controller_init(void)
     ESP_LOGI(TAG, "Sistema iniciado. Presiona botones o mueve el joystick para ver la salida.");
 
     return ESP_OK;
+}
+
+void controller_set_hid_connection(uint16_t conn_id)
+{
+    if (hid_conn_mutex != NULL) {
+        if (xSemaphoreTake(hid_conn_mutex, portMAX_DELAY) == pdTRUE) {
+            hid_conn_id = conn_id;
+            hid_connected = true;
+            xSemaphoreGive(hid_conn_mutex);
+            ESP_LOGI(TAG, "Conexión HID establecida (conn_id=%d)", conn_id);
+        }
+    }
+}
+
+void controller_clear_hid_connection(void)
+{
+    if (hid_conn_mutex != NULL) {
+        if (xSemaphoreTake(hid_conn_mutex, portMAX_DELAY) == pdTRUE) {
+            hid_connected = false;
+            hid_conn_id = 0;
+            xSemaphoreGive(hid_conn_mutex);
+            ESP_LOGI(TAG, "Conexión HID cerrada");
+        }
+    }
 }
 

@@ -111,10 +111,12 @@ static void hidd_event_callback(esp_hidd_cb_event_t event, esp_hidd_cb_param_t *
 		case ESP_HIDD_EVENT_BLE_CONNECT: {
             ESP_LOGI(HID_DEMO_TAG, "Conexion exitosa");
             hid_conn_id = param->connect.conn_id;
+            controller_set_hid_connection(hid_conn_id);
             break;
         }
         case ESP_HIDD_EVENT_BLE_DISCONNECT: {
             sec_conn = false;
+            controller_clear_hid_connection();
             esp_ble_gap_start_advertising(&hidd_adv_params);
             break;
         }

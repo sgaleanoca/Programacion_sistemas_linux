@@ -38,6 +38,18 @@ extern "C" {
  */
 esp_err_t controller_init(void);
 
+/**
+ * @brief Notifica al controlador que hay una conexión HID activa
+ * 
+ * @param conn_id ID de conexión BLE HID
+ */
+void controller_set_hid_connection(uint16_t conn_id);
+
+/**
+ * @brief Notifica al controlador que se perdió la conexión HID
+ */
+void controller_clear_hid_connection(void);
+
 #ifdef __cplusplus
 }
 #endif
