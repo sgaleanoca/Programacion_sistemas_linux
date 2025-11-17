@@ -1,7 +1,7 @@
 {
     "version":            "1.2",
     "project_name":       "proyecto-5-bluetooth-controller-2.0",
-    "project_version":    "3fe4fff-dirty",
+    "project_version":    "032dcaf-dirty",
     "project_path":       "/home/zerendor/Documents/Programación de Sistemas Linux Embebidos/proyecto-5-bluetooth-controller-2.0",
     "idf_path":           "/home/zerendor/esp/esp-idf",
     "build_dir":          "/home/zerendor/Documents/Programación de Sistemas Linux Embebidos/proyecto-5-bluetooth-controller-2.0/build",
