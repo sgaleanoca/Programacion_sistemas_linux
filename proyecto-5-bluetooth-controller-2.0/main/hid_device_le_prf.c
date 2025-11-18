@@ -27,35 +27,44 @@ struct prf_char_pres_fmt
 static hid_report_map_t hid_rpt_map[HID_NUM_REPORTS];
 
 // HID Report Map characteristic value
-// Keyboard report descriptor (using format for Boot interface descriptor)
+// Gamepad report descriptor
 static const uint8_t hidReportMap[] = {
     0x05, 0x01,  // Usage Page (Generic Desktop)
-    0x09, 0x02,  // Usage (Mouse)
+    0x09, 0x05,  // Usage (Gamepad)
     0xA1, 0x01,  // Collection (Application)
     0x85, 0x01,  // Report Id (1)
-    0x09, 0x01,  //   Usage (Pointer)
-    0xA1, 0x00,  //   Collection (Physical)
-    0x05, 0x09,  //     Usage Page (Buttons)
-    0x19, 0x01,  //     Usage Minimum (01) - Button 1
-    0x29, 0x03,  //     Usage Maximum (03) - Button 3
-    0x15, 0x00,  //     Logical Minimum (0)
-    0x25, 0x01,  //     Logical Maximum (1)
-    0x75, 0x01,  //     Report Size (1)
-    0x95, 0x03,  //     Report Count (3)
-    0x81, 0x02,  //     Input (Data, Variable, Absolute) - Button states
-    0x75, 0x05,  //     Report Size (5)
-    0x95, 0x01,  //     Report Count (1)
-    0x81, 0x01,  //     Input (Constant) - Padding or Reserved bits
-    0x05, 0x01,  //     Usage Page (Generic Desktop)
-    0x09, 0x30,  //     Usage (X)
-    0x09, 0x31,  //     Usage (Y)
-    0x09, 0x38,  //     Usage (Wheel)
-    0x15, 0x81,  //     Logical Minimum (-127)
-    0x25, 0x7F,  //     Logical Maximum (127)
-    0x75, 0x08,  //     Report Size (8)
-    0x95, 0x03,  //     Report Count (3)
-    0x81, 0x06,  //     Input (Data, Variable, Relative) - X & Y coordinate
-    0xC0,        //   End Collection
+    0x05, 0x09,  //   Usage Page (Button)
+    0x19, 0x01,  //   Usage Minimum (Button 1)
+    0x29, 0x04,  //   Usage Maximum (Button 4) - A, B, SELECT, START
+    0x15, 0x00,  //   Logical Minimum (0)
+    0x25, 0x01,  //   Logical Maximum (1)
+    0x75, 0x01,  //   Report Size (1)
+    0x95, 0x04,  //   Report Count (4)
+    0x81, 0x02,  //   Input (Data, Variable, Absolute) - Button states
+    0x75, 0x04,  //   Report Size (4)
+    0x95, 0x01,  //   Report Count (1)
+    0x81, 0x01,  //   Input (Constant) - Padding
+    0x05, 0x01,  //   Usage Page (Generic Desktop)
+    0x09, 0x39,  //   Usage (Hat Switch) - D-Pad
+    0x15, 0x00,  //   Logical Minimum (0)
+    0x25, 0x07,  //   Logical Maximum (7) - 8 directions
+    0x35, 0x00,  //   Physical Minimum (0)
+    0x46, 0x3B, 0x01,  // Physical Maximum (315)
+    0x65, 0x14,  //   Unit (Degrees)
+    0x75, 0x04,  //   Report Size (4)
+    0x95, 0x01,  //   Report Count (1)
+    0x81, 0x02,  //   Input (Data, Variable, Absolute)
+    0x75, 0x04,  //   Report Size (4)
+    0x95, 0x01,  //   Report Count (1)
+    0x81, 0x01,  //   Input (Constant) - Padding
+    0x05, 0x01,  //   Usage Page (Generic Desktop)
+    0x09, 0x30,  //   Usage (X) - Joystick X axis
+    0x09, 0x31,  //   Usage (Y) - Joystick Y axis
+    0x15, 0x81,  //   Logical Minimum (-127)
+    0x25, 0x7F,  //   Logical Maximum (127)
+    0x75, 0x08,  //   Report Size (8)
+    0x95, 0x02,  //   Report Count (2)
+    0x81, 0x02,  //   Input (Data, Variable, Absolute)
     0xC0,        // End Collection
 
     0x05, 0x01,  // Usage Pg (Generic Desktop)
@@ -222,9 +231,9 @@ static const uint8_t hidInfo[HID_INFORMATION_LEN] = {
 // HID External Report Reference Descriptor
 static uint16_t hidExtReportRefDesc = ESP_GATT_UUID_BATTERY_LEVEL;
 
-// HID Report Reference characteristic descriptor, mouse input
-static uint8_t hidReportRefMouseIn[HID_REPORT_REF_LEN] =
-             { HID_RPT_ID_MOUSE_IN, HID_REPORT_TYPE_INPUT };
+// HID Report Reference characteristic descriptor, gamepad input
+static uint8_t hidReportRefGamepadIn[HID_REPORT_REF_LEN] =
+             { HID_RPT_ID_GAMEPAD_IN, HID_REPORT_TYPE_INPUT };
 
 
 // HID Report Reference characteristic descriptor, key input
@@ -382,25 +391,25 @@ static esp_gatts_attr_db_t hidd_le_gatt_db[HIDD_LE_IDX_NB] =
                                                                         sizeof(uint8_t), sizeof(hidProtocolMode),
                                                                         (uint8_t *)&hidProtocolMode}},
 
-    [HIDD_LE_IDX_REPORT_MOUSE_IN_CHAR]       = {{ESP_GATT_AUTO_RSP}, {ESP_UUID_LEN_16, (uint8_t *)&character_declaration_uuid,
+    [HIDD_LE_IDX_REPORT_GAMEPAD_IN_CHAR]       = {{ESP_GATT_AUTO_RSP}, {ESP_UUID_LEN_16, (uint8_t *)&character_declaration_uuid,
                                                                          ESP_GATT_PERM_READ,
                                                                          CHAR_DECLARATION_SIZE, CHAR_DECLARATION_SIZE,
                                                                          (uint8_t *)&char_prop_read_notify}},
 
-    [HIDD_LE_IDX_REPORT_MOUSE_IN_VAL]        = {{ESP_GATT_AUTO_RSP}, {ESP_UUID_LEN_16, (uint8_t *)&hid_report_uuid,
+    [HIDD_LE_IDX_REPORT_GAMEPAD_IN_VAL]        = {{ESP_GATT_AUTO_RSP}, {ESP_UUID_LEN_16, (uint8_t *)&hid_report_uuid,
                                                                        ESP_GATT_PERM_READ,
                                                                        HIDD_LE_REPORT_MAX_LEN, 0,
                                                                        NULL}},
 
-    [HIDD_LE_IDX_REPORT_MOUSE_IN_CCC]        = {{ESP_GATT_AUTO_RSP}, {ESP_UUID_LEN_16, (uint8_t *)&character_client_config_uuid,
+    [HIDD_LE_IDX_REPORT_GAMEPAD_IN_CCC]        = {{ESP_GATT_AUTO_RSP}, {ESP_UUID_LEN_16, (uint8_t *)&character_client_config_uuid,
                                                                       (ESP_GATT_PERM_READ | ESP_GATT_PERM_WRITE),
                                                                       sizeof(uint16_t), 0,
                                                                       NULL}},
 
-    [HIDD_LE_IDX_REPORT_MOUSE_REP_REF]       = {{ESP_GATT_AUTO_RSP}, {ESP_UUID_LEN_16, (uint8_t *)&hid_report_ref_descr_uuid,
+    [HIDD_LE_IDX_REPORT_GAMEPAD_REP_REF]       = {{ESP_GATT_AUTO_RSP}, {ESP_UUID_LEN_16, (uint8_t *)&hid_report_ref_descr_uuid,
                                                                        ESP_GATT_PERM_READ,
-                                                                       sizeof(hidReportRefMouseIn), sizeof(hidReportRefMouseIn),
-                                                                       hidReportRefMouseIn}},
+                                                                       sizeof(hidReportRefGamepadIn), sizeof(hidReportRefGamepadIn),
+                                                                       hidReportRefGamepadIn}},
     // Report Characteristic Declaration
     [HIDD_LE_IDX_REPORT_KEY_IN_CHAR]         = {{ESP_GATT_AUTO_RSP}, {ESP_UUID_LEN_16, (uint8_t *)&character_declaration_uuid,
                                                                          ESP_GATT_PERM_READ,
@@ -750,11 +759,11 @@ void hidd_get_attr_value(uint16_t handle, uint16_t *length, uint8_t **value)
 
 static void hid_add_id_tbl(void)
 {
-     // Mouse input report
-      hid_rpt_map[0].id = hidReportRefMouseIn[0];
-      hid_rpt_map[0].type = hidReportRefMouseIn[1];
-      hid_rpt_map[0].handle = hidd_le_env.hidd_inst.att_tbl[HIDD_LE_IDX_REPORT_MOUSE_IN_VAL];
-      hid_rpt_map[0].cccdHandle = hidd_le_env.hidd_inst.att_tbl[HIDD_LE_IDX_REPORT_MOUSE_IN_VAL];
+     // Gamepad input report
+      hid_rpt_map[0].id = hidReportRefGamepadIn[0];
+      hid_rpt_map[0].type = hidReportRefGamepadIn[1];
+      hid_rpt_map[0].handle = hidd_le_env.hidd_inst.att_tbl[HIDD_LE_IDX_REPORT_GAMEPAD_IN_VAL];
+      hid_rpt_map[0].cccdHandle = hidd_le_env.hidd_inst.att_tbl[HIDD_LE_IDX_REPORT_GAMEPAD_IN_CCC];
       hid_rpt_map[0].mode = HID_PROTOCOL_MODE_REPORT;
 
       // Key input report
@@ -794,10 +803,10 @@ static void hid_add_id_tbl(void)
       hid_rpt_map[5].cccdHandle = 0;
       hid_rpt_map[5].mode = HID_PROTOCOL_MODE_BOOT;
 
-      // Boot mouse input report
-      // Use same ID and type as mouse input report
-      hid_rpt_map[6].id = hidReportRefMouseIn[0];
-      hid_rpt_map[6].type = hidReportRefMouseIn[1];
+      // Boot gamepad input report (kept for compatibility, but not used)
+      // Use same ID and type as gamepad input report
+      hid_rpt_map[6].id = hidReportRefGamepadIn[0];
+      hid_rpt_map[6].type = hidReportRefGamepadIn[1];
       hid_rpt_map[6].handle = hidd_le_env.hidd_inst.att_tbl[HIDD_LE_IDX_BOOT_MOUSE_IN_REPORT_VAL];
       hid_rpt_map[6].cccdHandle = 0;
       hid_rpt_map[6].mode = HID_PROTOCOL_MODE_BOOT;

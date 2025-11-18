@@ -171,12 +171,14 @@ static esp_err_t buttons_init(void)
 }
 
 /**
- * @brief Lee el estado de un botón
+ * @brief Lee el estado de un botón con debounce simple
  * @return true si el botón está presionado (LOW), false si está suelto (HIGH)
  */
 static bool read_button(gpio_num_t gpio)
 {
-    return (gpio_get_level(gpio) == 0);
+    // Leer el estado del GPIO (0 = presionado con pull-up, 1 = suelto)
+    int level = gpio_get_level(gpio);
+    return (level == 0);
 }
 
 /**
@@ -204,80 +206,6 @@ static int read_adc_mv(adc_channel_t channel, adc_cali_handle_t cali_handle)
     }
     
     return voltage;
-}
-
-/**
- * @brief Tarea para leer y mostrar el estado de los botones
- */
-static void button_task(void *pvParameters)
-{
-    uint16_t current_conn_id = 0;
-    bool current_connected = false;
-    
-    while (1) {
-        // Obtener estado de conexión de forma thread-safe
-        if (xSemaphoreTake(hid_conn_mutex, pdMS_TO_TICKS(10)) == pdTRUE) {
-            current_conn_id = hid_conn_id;
-            current_connected = hid_connected;
-            xSemaphoreGive(hid_conn_mutex);
-        }
-        
-        bool a_pressed = read_button(GPIO_BUTTON_A);
-        bool b_pressed = read_button(GPIO_BUTTON_B);
-        bool select_pressed = read_button(GPIO_BUTTON_SELECT);
-        bool start_pressed = read_button(GPIO_BUTTON_START);
-
-        // Mapeo de botones del controlador a botones del mouse HID (para gamepad)
-        // Botón A -> Botón izquierdo del mouse (bit 0 = 0x01)
-        // Botón B -> Botón derecho del mouse (bit 1 = 0x02)
-        // Botón SELECT -> Botón medio del mouse (bit 2 = 0x04)
-        // Botón START -> Tecla Enter (para compatibilidad con emuladores)
-        
-        // Calcular el estado combinado de los botones del mouse
-        uint8_t mouse_buttons = 0;
-        if (a_pressed) mouse_buttons |= 0x01;      // Botón izquierdo
-        if (b_pressed) mouse_buttons |= 0x02;      // Botón derecho
-        if (select_pressed) mouse_buttons |= 0x04; // Botón medio
-
-        // Solo procesar si hay un cambio de estado en los botones del mouse
-        uint8_t prev_mouse_buttons = 0;
-        if (button_a_state) prev_mouse_buttons |= 0x01;
-        if (button_b_state) prev_mouse_buttons |= 0x02;
-        if (button_select_state) prev_mouse_buttons |= 0x04;
-        
-        if (mouse_buttons != prev_mouse_buttons) {
-            button_a_state = a_pressed;
-            button_b_state = b_pressed;
-            button_select_state = select_pressed;
-            
-            if (current_connected) {
-                // Enviar estado de botones del mouse (sin movimiento)
-                esp_hidd_send_mouse_value(current_conn_id, mouse_buttons, 0, 0);
-                ESP_LOGI(TAG, "Botones mouse: A=%d B=%d SELECT=%d (mask=0x%02X)", 
-                         a_pressed, b_pressed, select_pressed, mouse_buttons);
-            }
-        }
-        
-        // START se envía como teclado (Enter) para compatibilidad
-        if (start_pressed != button_start_state) {
-            button_start_state = start_pressed;
-            if (start_pressed) {
-                ESP_LOGI(TAG, "Botón START: PRESIONADO");
-                if (current_connected) {
-                    uint8_t key = HID_KEY_RETURN;
-                    esp_hidd_send_keyboard_value(current_conn_id, 0, &key, 1);
-                }
-            } else {
-                ESP_LOGI(TAG, "Botón START: SUELTO");
-                if (current_connected) {
-                    uint8_t key = 0;
-                    esp_hidd_send_keyboard_value(current_conn_id, 0, &key, 1);
-                }
-            }
-        }
-
-        vTaskDelay(pdMS_TO_TICKS(50)); // Leer cada 50ms
-    }
 }
 
 /**
@@ -310,13 +238,43 @@ static float normalize_joystick(int mv, int center_mv, int min_mv, int max_mv)
 }
 
 /**
- * @brief Tarea para leer y mostrar los valores del joystick
+ * @brief Convierte coordenadas X,Y a dirección del Hat Switch (D-Pad)
+ * @param x Coordenada X normalizada (-1.0 a 1.0)
+ * @param y Coordenada Y normalizada (-1.0 a 1.0)
+ * @param threshold Umbral para considerar que está en una dirección
+ * @return Valor del hat switch (0-7) o 8 si está en el centro
  */
-static void joystick_task(void *pvParameters)
+static uint8_t joystick_to_hat_switch(float x, float y, float threshold)
 {
-    float last_x = 999.0f;  // Valor inicial imposible
-    float last_y = 999.0f;
-    const float threshold = 0.05f; // Umbral de cambio (5% del rango)
+    // Hat switch values: 0=North, 1=NE, 2=East, 3=SE, 4=South, 5=SW, 6=West, 7=NW, 8=Center
+    bool left = (x < -threshold);
+    bool right = (x > threshold);
+    bool up = (y < -threshold);    // Y invertido: negativo es arriba
+    bool down = (y > threshold);
+    
+    if (!left && !right && !up && !down) {
+        return 8; // Centro
+    }
+    
+    if (up && !left && !right) return 0;      // North
+    if (up && right) return 1;                // Northeast
+    if (right && !up && !down) return 2;      // East
+    if (down && right) return 3;               // Southeast
+    if (down && !left && !right) return 4;    // South
+    if (down && left) return 5;                // Southwest
+    if (left && !up && !down) return 6;       // West
+    if (up && left) return 7;                  // Northwest
+    
+    return 8; // Centro (fallback)
+}
+
+/**
+ * @brief Tarea para leer y enviar el estado completo del gamepad
+ */
+static void button_task(void *pvParameters)
+{
+    uint16_t current_conn_id = 0;
+    bool current_connected = false;
     
     adc_channel_t channel_vrx = ADC_CHANNEL_0;  // GPIO 36
     adc_channel_t channel_vry = ADC_CHANNEL_3;  // GPIO 39
@@ -342,10 +300,9 @@ static void joystick_task(void *pvParameters)
     
     ESP_LOGI(TAG, "Joystick calibrado - Centro VRX: %d mV, Centro VRY: %d mV", 
              calibrated_center_vrx, calibrated_center_vry);
-
-    uint16_t current_conn_id = 0;
-    bool current_connected = false;
-
+    ESP_LOGI(TAG, "Rangos esperados - Min: %d mV, Max: %d mV, Centro teórico: %d mV", 
+             min_mv, max_mv, center_mv);
+    
     while (1) {
         // Obtener estado de conexión de forma thread-safe
         if (xSemaphoreTake(hid_conn_mutex, pdMS_TO_TICKS(10)) == pdTRUE) {
@@ -354,75 +311,228 @@ static void joystick_task(void *pvParameters)
             xSemaphoreGive(hid_conn_mutex);
         }
         
+        // Leer botones (con lectura directa para SELECT y START para debugging)
+        bool a_pressed = read_button(GPIO_BUTTON_A);
+        bool b_pressed = read_button(GPIO_BUTTON_B);
+        bool select_pressed = read_button(GPIO_BUTTON_SELECT);
+        bool start_pressed = read_button(GPIO_BUTTON_START);
+        
+        // Verificación adicional: leer directamente los niveles GPIO para SELECT y START
+        // Esto ayuda a detectar problemas de hardware
+        int select_level = gpio_get_level(GPIO_BUTTON_SELECT);
+        int start_level = gpio_get_level(GPIO_BUTTON_START);
+        
+        // Verificar consistencia: si pressed es true, level debe ser 0 (LOW)
+        // Si pressed es false, level debe ser 1 (HIGH)
+        bool select_consistent = (select_pressed == (select_level == 0));
+        bool start_consistent = (start_pressed == (start_level == 0));
+        
+        if (!select_consistent) {
+            ESP_LOGW(TAG, "Inconsistencia SELECT - pressed: %d, level: %d", select_pressed, select_level);
+        }
+        if (!start_consistent) {
+            ESP_LOGW(TAG, "Inconsistencia START - pressed: %d, level: %d", start_pressed, start_level);
+        }
+        
+        // Debug: Log estado de botones cuando cambian
+        static bool last_a = false, last_b = false, last_select = false, last_start = false;
+        if (a_pressed != last_a || b_pressed != last_b || select_pressed != last_select || start_pressed != last_start) {
+            ESP_LOGI(TAG, "Botones GPIO - A(GPIO13): %d, B(GPIO12): %d, SELECT(GPIO25): %d, START(GPIO26): %d",
+                     a_pressed, b_pressed, select_pressed, start_pressed);
+            // Verificar niveles GPIO directamente para debugging
+            ESP_LOGI(TAG, "Niveles GPIO - A: %d, B: %d, SELECT: %d, START: %d",
+                     gpio_get_level(GPIO_BUTTON_A),
+                     gpio_get_level(GPIO_BUTTON_B),
+                     gpio_get_level(GPIO_BUTTON_SELECT),
+                     gpio_get_level(GPIO_BUTTON_START));
+            last_a = a_pressed;
+            last_b = b_pressed;
+            last_select = select_pressed;
+            last_start = start_pressed;
+        }
+        
+        // Leer joystick
         int vrx_mv = read_adc_mv(channel_vrx, adc1_cali_handle_vrx);
         int vry_mv = read_adc_mv(channel_vry, adc1_cali_handle_vry);
-
+        
         // Convertir a coordenadas normalizadas
         float x = normalize_joystick(vrx_mv, calibrated_center_vrx, min_mv, max_mv);
         float y = normalize_joystick(vry_mv, calibrated_center_vry, min_mv, max_mv);
-
-        // Convertir joystick a D-Pad (direcciones discretas)
-        // Umbral para considerar que el joystick está en una dirección
-        const float dpad_threshold = 0.3f; // 30% del rango
-        // Sensibilidad del D-Pad (valores más pequeños para movimiento más controlado)
-        const int8_t dpad_sensitivity = 20; // Ajustar según necesidad
         
-        int8_t dpad_x = 0;
-        int8_t dpad_y = 0;
-        
-        // Determinar dirección D-Pad basada en el joystick
-        if (x < -dpad_threshold) {
-            dpad_x = -dpad_sensitivity; // LEFT
-        } else if (x > dpad_threshold) {
-            dpad_x = dpad_sensitivity;  // RIGHT
+        // Debug: Log valores crudos periódicamente (cada 2 segundos aproximadamente)
+        static int debug_counter = 0;
+        if (++debug_counter >= 40) { // 40 * 50ms = 2 segundos
+            ESP_LOGI(TAG, "ADC raw - VRX: %d mV (centro: %d), VRY: %d mV (centro: %d)", 
+                     vrx_mv, calibrated_center_vrx, vry_mv, calibrated_center_vry);
+            ESP_LOGI(TAG, "Normalized - X: %.3f, Y: %.3f", x, y);
+            debug_counter = 0;
         }
         
-        if (y < -dpad_threshold) {
-            dpad_y = -dpad_sensitivity; // UP (Y invertido)
-        } else if (y > dpad_threshold) {
-            dpad_y = dpad_sensitivity;  // DOWN (Y invertido)
+        // NO invertir eje Y - el joystick ya está en la orientación correcta
+        // Si necesitas invertir, quita el comentario de la siguiente línea:
+        // y = -y;
+        
+        // Aplicar zona muerta (dead zone) para evitar drift en el centro
+        const float dead_zone = 0.12f; // 12% de zona muerta
+        if (fabsf(x) < dead_zone) x = 0.0f;
+        if (fabsf(y) < dead_zone) y = 0.0f;
+        
+        // Aplicar curva de respuesta suave (para mejor control)
+        // Usar una curva que sea más suave cerca del centro y más lineal al final
+        if (x != 0.0f) {
+            float abs_x = fabsf(x);
+            float sign = (x > 0) ? 1.0f : -1.0f;
+            // Curva: más suave al inicio, más lineal al final
+            x = sign * (abs_x * (0.7f + 0.3f * abs_x));
+        }
+        if (y != 0.0f) {
+            float abs_y = fabsf(y);
+            float sign = (y > 0) ? 1.0f : -1.0f;
+            // Curva: más suave al inicio, más lineal al final
+            y = sign * (abs_y * (0.7f + 0.3f * abs_y));
         }
         
-        // Calcular dirección anterior para detectar cambios
-        int8_t last_dpad_x = 0;
-        int8_t last_dpad_y = 0;
-        if (last_x < -dpad_threshold) last_dpad_x = -dpad_sensitivity;
-        else if (last_x > dpad_threshold) last_dpad_x = dpad_sensitivity;
-        if (last_y < -dpad_threshold) last_dpad_y = -dpad_sensitivity;
-        else if (last_y > dpad_threshold) last_dpad_y = dpad_sensitivity;
+        // Convertir a valores de joystick (-127 a 127)
+        int8_t x_axis = (int8_t)(x * 127.0f);
+        int8_t y_axis = (int8_t)(y * 127.0f);
         
-        // Solo procesar si hay un cambio de dirección o si el joystick está activo
-        if (dpad_x != last_dpad_x || dpad_y != last_dpad_y || 
-            (dpad_x != 0 || dpad_y != 0)) {
-            
-            ESP_LOGI(TAG, "Joystick - x: %.3f, y: %.3f -> D-Pad: X=%d, Y=%d", 
-                     x, y, dpad_x, dpad_y);
-            
-            // Enviar movimiento del mouse como D-Pad si hay conexión
-            if (current_connected) {
-                // Obtener estado actual de los botones del mouse
-                uint8_t current_mouse_buttons = 0;
-                if (button_a_state) current_mouse_buttons |= 0x01;
-                if (button_b_state) current_mouse_buttons |= 0x02;
-                if (button_select_state) current_mouse_buttons |= 0x04;
-                
-                // Enviar movimiento del mouse (D-Pad) manteniendo los botones
-                // Solo enviar si hay una dirección activa
-                if (dpad_x != 0 || dpad_y != 0) {
-                    esp_hidd_send_mouse_value(current_conn_id, current_mouse_buttons, dpad_x, dpad_y);
-                } else {
-                    // Si el joystick está en el centro, enviar sin movimiento pero con botones
-                    esp_hidd_send_mouse_value(current_conn_id, current_mouse_buttons, 0, 0);
+        // Convertir joystick a Hat Switch (D-Pad) solo si hay movimiento significativo
+        // NOTA: El hat switch usa valores 0-7 donde 0=North, 1=NE, 2=East, etc.
+        // Cuando está en el centro, usamos 15 (0x0F) que muchos sistemas HID
+        // interpretan como "centro" o "sin dirección" (valor fuera del rango lógico 0-7)
+        const float hat_threshold = 0.4f; // 40% del rango para activar D-Pad
+        uint8_t hat_switch = 15; // Por defecto, centro (15 = 0x0F, significa "sin dirección")
+        
+        // Solo activar hat switch si hay movimiento significativo Y el joystick no está en zona muerta
+        if (x != 0.0f || y != 0.0f) {
+            if (fabsf(x) > hat_threshold || fabsf(y) > hat_threshold) {
+                uint8_t hat_switch_raw = joystick_to_hat_switch(x, y, hat_threshold);
+                // Si está en el centro (8), mantener 15. Si no, usar la dirección real (0-7)
+                if (hat_switch_raw != 8) {
+                    hat_switch = hat_switch_raw;
                 }
+                // Si hat_switch_raw es 8 (centro), hat_switch permanece en 15
+            }
+            // Si no hay movimiento suficiente, hat_switch permanece en 15 (centro)
+        }
+        // Si x e y están ambos en 0 (zona muerta), hat_switch permanece en 15 (centro)
+        
+        // Preparar botones del gamepad (4 bits: Button 1, Button 2, Button 3, Button 4)
+        // Mapeo físico a lógico según estándar HID Gamepad:
+        // - Button 1 (bit 0 = 0x01): Botón A físico (GPIO 13) - Acción principal
+        // - Button 2 (bit 1 = 0x02): Botón B físico (GPIO 12) - Acción secundaria
+        // - Button 3 (bit 2 = 0x04): Botón SELECT físico (GPIO 25)
+        // - Button 4 (bit 3 = 0x08): Botón START físico (GPIO 26)
+        //
+        // Mapeo estándar para emuladores:
+        // - Button 1 = A (acción principal)
+        // - Button 2 = B (acción secundaria)
+        // - Button 3 = SELECT
+        // - Button 4 = START
+        uint8_t gamepad_buttons = 0;
+        
+        // Mapear botones directamente - asegurar que los bits se establezcan correctamente
+        if (a_pressed) {
+            gamepad_buttons |= 0x01;       // Button 1 -> A físico (GPIO 13) - bit 0
+        }
+        if (b_pressed) {
+            gamepad_buttons |= 0x02;       // Button 2 -> B físico (GPIO 12) - bit 1
+        }
+        if (select_pressed) {
+            gamepad_buttons |= 0x04;       // Button 3 -> SELECT físico (GPIO 25) - bit 2
+        }
+        if (start_pressed) {
+            gamepad_buttons |= 0x08;       // Button 4 -> START físico (GPIO 26) - bit 3
+        }
+        
+        // Debug específico para SELECT y START - siempre loggear cuando están presionados
+        if (select_pressed || start_pressed) {
+            ESP_LOGI(TAG, ">>> SELECT/START PRESIONADOS - SELECT: %d (GPIO25 level=%d), START: %d (GPIO26 level=%d)", 
+                     select_pressed, gpio_get_level(GPIO_BUTTON_SELECT),
+                     start_pressed, gpio_get_level(GPIO_BUTTON_START));
+            ESP_LOGI(TAG, ">>> gamepad_buttons byte: 0x%02X (binario: 0b%04b)", gamepad_buttons, gamepad_buttons);
+            ESP_LOGI(TAG, ">>> Bits individuales - A: %d, B: %d, SEL: %d, ST: %d",
+                     (gamepad_buttons & 0x01) ? 1 : 0,
+                     (gamepad_buttons & 0x02) ? 1 : 0,
+                     (gamepad_buttons & 0x04) ? 1 : 0,
+                     (gamepad_buttons & 0x08) ? 1 : 0);
+        }
+        
+        // Detectar cambios en botones
+        bool state_changed = (a_pressed != button_a_state) ||
+                            (b_pressed != button_b_state) ||
+                            (select_pressed != button_select_state) ||
+                            (start_pressed != button_start_state);
+        
+        // Detectar cambios en el joystick (solo si hay movimiento significativo)
+        static int8_t last_x_axis = 0;
+        static int8_t last_y_axis = 0;
+        static uint8_t last_hat_switch = 0;
+        static uint8_t last_gamepad_buttons = 0;
+        
+        bool joystick_changed = (abs(x_axis - last_x_axis) > 2) || 
+                               (abs(y_axis - last_y_axis) > 2) ||
+                               (hat_switch != last_hat_switch);
+        
+        // Detectar cambios en botones (comparar con el último valor enviado)
+        bool buttons_changed = (gamepad_buttons != last_gamepad_buttons);
+        
+        // Actualizar estados locales
+        button_a_state = a_pressed;
+        button_b_state = b_pressed;
+        button_select_state = select_pressed;
+        button_start_state = start_pressed;
+        
+        // Enviar datos del gamepad si hay conexión
+        // IMPORTANTE: Enviar siempre que haya cambios en botones o joystick
+        // START y SELECT se comportan igual que A y B: solo se envían cuando hay cambio de estado
+        if (current_connected) {
+            static int send_counter = 0;
+            bool should_send = false;
+            
+            // PRIORIDAD 1: Enviar SIEMPRE si hay cambios en botones o joystick
+            // Esto incluye cambios en START y SELECT, igual que A y B
+            if (buttons_changed || joystick_changed) {
+                should_send = true;
             }
             
-            last_x = x;
-            last_y = y;
+            // PRIORIDAD 2: Enviar periódicamente (cada 100ms) si hay botones presionados
+            // Esto aplica a todos los botones por igual (A, B, SELECT, START)
+            if (gamepad_buttons != 0 && !should_send) {
+                send_counter++;
+                if (send_counter >= 2) { // 2 * 50ms = 100ms
+                    should_send = true;
+                    send_counter = 0;
+                }
+            } else if (gamepad_buttons == 0) {
+                send_counter = 0;
+            }
+            
+            // Enviar si es necesario
+            if (should_send) {
+                esp_hidd_send_gamepad_value(current_conn_id, gamepad_buttons, hat_switch, x_axis, y_axis);
+                last_x_axis = x_axis;
+                last_y_axis = y_axis;
+                last_hat_switch = hat_switch;
+                last_gamepad_buttons = gamepad_buttons;
+                
+                // Loggear cuando hay cambios en botones
+                if (buttons_changed) {
+                    ESP_LOGI(TAG, "Gamepad ENVIADO - Buttons: 0x%02X (A:%d B:%d SEL:%d ST:%d), Hat: %d, X: %d, Y: %d", 
+                             gamepad_buttons, 
+                             (gamepad_buttons & 0x01) ? 1 : 0,
+                             (gamepad_buttons & 0x02) ? 1 : 0,
+                             (gamepad_buttons & 0x04) ? 1 : 0,
+                             (gamepad_buttons & 0x08) ? 1 : 0,
+                             hat_switch, x_axis, y_axis);
+                }
+            }
         }
 
-        vTaskDelay(pdMS_TO_TICKS(50)); // Leer cada 50ms para mejor respuesta
+        vTaskDelay(pdMS_TO_TICKS(50)); // Leer cada 50ms
     }
 }
+
 
 esp_err_t controller_init(void)
 {
@@ -455,17 +565,11 @@ esp_err_t controller_init(void)
     ESP_LOGI(TAG, "ADC inicializado para joystick: VRX=GPIO%d (ADC1_CH0), VRY=GPIO%d (ADC1_CH3)",
              GPIO_JOYSTICK_VRX, GPIO_JOYSTICK_VRY);
 
-    // Crear tareas
+    // Crear tarea para gamepad (combina botones y joystick)
     BaseType_t task_ret;
-    task_ret = xTaskCreate(button_task, "button_task", 2048, NULL, 5, NULL);
+    task_ret = xTaskCreate(button_task, "gamepad_task", 4096, NULL, 5, NULL);
     if (task_ret != pdPASS) {
-        ESP_LOGE(TAG, "Failed to create button task");
-        return ESP_FAIL;
-    }
-
-    task_ret = xTaskCreate(joystick_task, "joystick_task", 2048, NULL, 5, NULL);
-    if (task_ret != pdPASS) {
-        ESP_LOGE(TAG, "Failed to create joystick task");
+        ESP_LOGE(TAG, "Failed to create gamepad task");
         return ESP_FAIL;
     }
 
