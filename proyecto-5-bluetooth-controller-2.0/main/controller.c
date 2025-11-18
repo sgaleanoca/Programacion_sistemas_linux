@@ -424,11 +424,21 @@ static void button_task(void *pvParameters)
         // - Button 3 (bit 2 = 0x04): Botón SELECT físico (GPIO 25)
         // - Button 4 (bit 3 = 0x08): Botón START físico (GPIO 26)
         //
-        // Mapeo estándar para emuladores:
-        // - Button 1 = A (acción principal)
-        // - Button 2 = B (acción secundaria)
-        // - Button 3 = SELECT
-        // - Button 4 = START
+        // IMPORTANTE: El sistema receptor (Linux/Raspberry Pi) interpreta los botones genéricos así:
+        // - Button 1 → A (acción principal)
+        // - Button 2 → B (acción secundaria)
+        // - Button 3 → C (en algunos sistemas) o botón 3 genérico
+        // - Button 4 → X (en algunos sistemas) o botón 4 genérico
+        //
+        // NOTA PARA PICO-8: Pico-8 permite reconfigurar los botones en su menú de configuración.
+        // Si experimentas conflictos, puedes reasignar los botones en Pico-8 para que coincidan
+        // con este mapeo, o cambiar las constantes de mapeo más abajo.
+        //
+        // Mapeo actual (puede cambiarse según necesidades):
+        // - Button 1 = A físico → interpretado como A por el sistema
+        // - Button 2 = B físico → interpretado como B por el sistema
+        // - Button 3 = SELECT físico → interpretado como C por el sistema
+        // - Button 4 = START físico → interpretado como X por el sistema
         uint8_t gamepad_buttons = 0;
         
         // Mapear botones directamente - asegurar que los bits se establezcan correctamente
