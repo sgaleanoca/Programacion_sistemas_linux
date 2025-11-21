@@ -162,7 +162,8 @@ void esp_hidd_send_keyboard_value(uint16_t conn_id, key_mask_t special_key_mask,
 
 void esp_hidd_send_mouse_value(uint16_t conn_id, uint8_t mouse_button, int8_t mickeys_x, int8_t mickeys_y);
 
-void esp_hidd_send_gamepad_value(uint16_t conn_id, uint8_t buttons, uint8_t hat_switch, int8_t x_axis, int8_t y_axis);
+void esp_hidd_send_gamepad_value(uint16_t conn_id, uint16_t buttons, int8_t left_x, int8_t left_y, int8_t right_x, int8_t right_y, uint8_t left_trigger, uint8_t right_trigger);
+
 
 #ifdef __cplusplus
 }

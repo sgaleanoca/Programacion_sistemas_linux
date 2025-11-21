@@ -11,6 +11,11 @@
 #include <string.h>
 #include "esp_log.h"
 
+// Include HID report ID definitions
+#ifndef HID_RPT_ID_GAMEPAD_IN
+#define HID_RPT_ID_GAMEPAD_IN    5
+#endif
+
 // HID keyboard input report length
 #define HID_KEYBOARD_IN_RPT_LEN     8
 
@@ -20,13 +25,6 @@
 // HID mouse input report length
 #define HID_MOUSE_IN_RPT_LEN        5
 
-// HID gamepad input report length
-// Format: [buttons+padding(1 byte), hat_switch+padding(1 byte), x_axis(1 byte), y_axis(1 byte)]
-// Byte 0: 4 bits buttons (A,B,SELECT,START) + 4 bits padding
-// Byte 1: 4 bits hat switch + 4 bits padding
-// Byte 2: X axis (-127 to 127)
-// Byte 3: Y axis (-127 to 127)
-#define HID_GAMEPAD_IN_RPT_LEN      4
 
 // HID consumer control input report length
 #define HID_CC_IN_RPT_LEN           2
@@ -127,12 +125,10 @@ void esp_hidd_send_keyboard_value(uint16_t conn_id, key_mask_t special_key_mask,
 }
 
 // Función mantenida por compatibilidad, pero no se usa en este proyecto
-// (el dispositivo ahora es un gamepad, no un mouse)
 void esp_hidd_send_mouse_value(uint16_t conn_id, uint8_t mouse_button, int8_t mickeys_x, int8_t mickeys_y)
 {
-    // Esta función ya no es funcional ya que el dispositivo es un gamepad
-    // Se mantiene solo por compatibilidad de la API
-    ESP_LOGW(HID_LE_PRF_TAG, "esp_hidd_send_mouse_value called but device is configured as gamepad");
+    // Esta función se mantiene solo por compatibilidad de la API
+    ESP_LOGW(HID_LE_PRF_TAG, "esp_hidd_send_mouse_value called but not implemented in this project");
     (void)conn_id;
     (void)mouse_button;
     (void)mickeys_x;
@@ -140,32 +136,34 @@ void esp_hidd_send_mouse_value(uint16_t conn_id, uint8_t mouse_button, int8_t mi
     return;
 }
 
-void esp_hidd_send_gamepad_value(uint16_t conn_id, uint8_t buttons, uint8_t hat_switch, int8_t x_axis, int8_t y_axis)
+// Gamepad report length: buttons(2) + left_x(1) + left_y(1) + right_x(1) + right_y(1) + left_trigger(1) + right_trigger(1) = 8 bytes
+#define HID_GAMEPAD_IN_RPT_LEN       8
+
+void esp_hidd_send_gamepad_value(uint16_t conn_id, uint16_t buttons, int8_t left_x, int8_t left_y, int8_t right_x, int8_t right_y, uint8_t left_trigger, uint8_t right_trigger)
 {
-    uint8_t buffer[HID_GAMEPAD_IN_RPT_LEN];
-
-    // Construir el buffer del reporte HID
-    // Byte 0: 4 bits de botones (bits 0-3: A, B, SELECT, START) + 4 bits de padding (0)
-    buffer[0] = buttons & 0x0F;         // Máscara para asegurar solo los 4 bits bajos
-    buffer[1] = (hat_switch & 0x0F);    // Hat Switch / D-Pad (4 bits, 0-7) + 4 bits padding (0)
-    buffer[2] = (uint8_t)x_axis;        // X axis (-127 to 127)
-    buffer[3] = (uint8_t)y_axis;        // Y axis (-127 to 127)
-
-    // Debug CRÍTICO: Log cuando SELECT o START están presionados
-    if (buttons & 0x0C) { // 0x0C = 0b1100 (bits 2 y 3 = SELECT y START)
-        ESP_LOGI(HID_LE_PRF_TAG, "*** ENVIANDO GAMEPAD HID ***");
-        ESP_LOGI(HID_LE_PRF_TAG, "Buttons input: 0x%02X, Buffer[0]: 0x%02X", buttons, buffer[0]);
-        ESP_LOGI(HID_LE_PRF_TAG, "Bits - A:%d B:%d SEL:%d ST:%d", 
-                 (buttons & 0x01) ? 1 : 0,
-                 (buttons & 0x02) ? 1 : 0,
-                 (buttons & 0x04) ? 1 : 0,
-                 (buttons & 0x08) ? 1 : 0);
-        ESP_LOGI(HID_LE_PRF_TAG, "Buffer completo: [0x%02X, 0x%02X, 0x%02X, 0x%02X]", 
-                 buffer[0], buffer[1], buffer[2], buffer[3]);
-    }
-
-    // Enviar el reporte HID
+    uint8_t buffer[HID_GAMEPAD_IN_RPT_LEN] = {0};
+    
+    // Buttons (16 buttons, 2 bytes)
+    buffer[0] = (uint8_t)(buttons & 0xFF);
+    buffer[1] = (uint8_t)((buttons >> 8) & 0xFF);
+    
+    // Left joystick
+    buffer[2] = (uint8_t)left_x;
+    buffer[3] = (uint8_t)left_y;
+    
+    // Right joystick
+    buffer[4] = (uint8_t)right_x;
+    buffer[5] = (uint8_t)right_y;
+    
+    // Triggers
+    buffer[6] = left_trigger;
+    buffer[7] = right_trigger;
+    
+    ESP_LOGD(HID_LE_PRF_TAG, "Sending gamepad report: buttons=0x%04X, L(%d,%d) R(%d,%d) T(%d,%d)",
+             buttons, left_x, left_y, right_x, right_y, left_trigger, right_trigger);
+    
     hid_dev_send_report(hidd_le_env.gatt_if, conn_id,
                         HID_RPT_ID_GAMEPAD_IN, HID_REPORT_TYPE_INPUT, HID_GAMEPAD_IN_RPT_LEN, buffer);
     return;
 }
+
