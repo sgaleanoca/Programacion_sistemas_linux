@@ -49,7 +49,7 @@ xset s off
 xset s noblank
 unclutter -idle 0 &
 cd /home/pi/pico-8
-./pico8_dyn -splore -fullscreen 1
+./pico8_dyn -root_path /home/pi/pico-8 -splore -fullscreen 1
 "
 
 Darle ctrl + o, luego enter, por último ctrl + x

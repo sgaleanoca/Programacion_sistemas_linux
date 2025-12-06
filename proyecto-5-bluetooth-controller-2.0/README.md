@@ -463,6 +463,3 @@ I (7024) CONTROLLER: Gamepad ENVIADO - Buttons: 0x0001 (A:1 B:0 SEL:0 ST:0), Hat
 - [USB HID Usage Tables](https://www.usb.org/sites/default/files/documents/hut1_12v2.pdf)
 - [PICO 8 Manual](https://www.lexaloffle.com/pico-8.php?page=manual)
 
-## Licencia
-
-Este proyecto está basado en el ejemplo BLE HID de ESP-IDF y utiliza la licencia Unlicense OR CC0-1.0.
